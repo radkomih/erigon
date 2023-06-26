@@ -3,9 +3,9 @@ package merkle_tree
 import (
 	"math/bits"
 
+	"github.com/Giulio2002/sharedbuffer"
 	"github.com/prysmaticlabs/gohashtree"
 
-	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon-lib/types/ssz"
 
@@ -33,26 +33,6 @@ func MerkleizeVector(elements [][32]byte, length uint64) ([32]byte, error) {
 		elements = elements[:outputLen]
 	}
 	return elements[0], nil
-}
-
-// MerkleizeVector uses our optimized routine to hash a list of 32-byte
-// elements.
-func MerkleizeVectorFlat(in []byte, limit uint64) ([32]byte, error) {
-	elements := make([]byte, len(in))
-	copy(elements, in)
-	for i := uint8(0); i < GetDepth(limit); i++ {
-		// Sequential
-		layerLen := len(elements)
-		if layerLen%64 == 32 {
-			elements = append(elements, ZeroHashes[i][:]...)
-		}
-		outputLen := len(elements) / 2
-		if err := HashByteSlice(elements, elements); err != nil {
-			return [32]byte{}, err
-		}
-		elements = elements[:outputLen]
-	}
-	return common.BytesToHash(elements[:length.Hash]), nil
 }
 
 // BitlistRootWithLimit computes the HashSSZ merkleization of
@@ -107,21 +87,30 @@ func TransactionsListRoot(transactions [][]byte) ([32]byte, error) {
 }
 
 func ListObjectSSZRoot[T ssz.HashableSSZ](list []T, limit uint64) ([32]byte, error) {
-	globalHasher.mu2.Lock()
-	defer globalHasher.mu2.Unlock()
 	// due to go generics we cannot make a method for global hasher.
-	subLeaves := globalHasher.getBufferForSSZList(len(list))
+	layer, cancelfn := sharedbuffer.Make((len(list) + (len(list) % 2)) * length.Hash)
+	defer cancelfn()
 	for i, element := range list {
 		subLeaf, err := element.HashSSZ()
 		if err != nil {
 			return [32]byte{}, err
 		}
-		subLeaves[i] = subLeaf
+		copy(layer[i*length.Hash:], subLeaf[:])
 	}
-	vectorLeaf, err := MerkleizeVector(subLeaves, limit)
-	if err != nil {
-		return [32]byte{}, err
+	var out [32]byte
+	depth := GetDepth(limit)
+	if len(layer) == 0 {
+		copy(out[:], ZeroHashes[depth][:])
+	} else {
+		layer = layer[:len(list)*length.Hash]
+
+		if err := globalHasher.merkleizeTrieLeavesFlatInPlace(layer, limit); err != nil {
+			return out, err
+		}
+
+		copy(out[:], layer[:length.Hash])
 	}
+
 	lenLeaf := Uint64Root(uint64(len(list)))
-	return utils.Keccak256(vectorLeaf[:], lenLeaf[:]), nil
+	return utils.Keccak256(out[:], lenLeaf[:]), nil
 }

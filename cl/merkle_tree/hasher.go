@@ -3,9 +3,10 @@ package merkle_tree
 import (
 	"sync"
 
+	"github.com/Giulio2002/sharedbuffer"
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
+	"github.com/ledgerwatch/erigon-lib/common/length"
 	"github.com/ledgerwatch/erigon/cl/utils"
-	"github.com/prysmaticlabs/gohashtree"
 )
 
 var globalHasher *merkleHasher
@@ -30,20 +31,36 @@ func newMerkleHasher() *merkleHasher {
 
 // merkleizeTrieLeaves returns intermediate roots of given leaves.
 func (m *merkleHasher) merkleizeTrieLeavesFlat(leaves []byte, out []byte, limit uint64) (err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	layer := m.getBufferFromFlat(leaves)
+	depth := GetDepth(limit)
+	if len(leaves) == 0 {
+		copy(out, ZeroHashes[depth][:])
+		return nil
+	}
+
+	layer, cancelfn := sharedbuffer.Make(len(leaves) + ((len(leaves)/32)%2)*length.Hash)
+	defer cancelfn()
+	copy(layer, leaves)
+	layer = layer[:len(leaves)]
+
+	if err = m.merkleizeTrieLeavesFlatInPlace(layer, limit); err != nil {
+		return
+	}
+	copy(out, layer[:length.Hash])
+	return
+}
+
+// merkleizeTrieLeaves returns intermediate roots of given leaves.
+func (m *merkleHasher) merkleizeTrieLeavesFlatInPlace(layer []byte, limit uint64) (err error) {
 	for i := uint8(0); i < GetDepth(limit); i++ {
 		layerLen := len(layer)
-		if layerLen%2 != 0 {
-			layer = append(layer, ZeroHashes[i])
+		if layerLen%64 != 0 {
+			layer = append(layer, ZeroHashes[i][:]...)
 		}
-		if err := gohashtree.Hash(layer, layer); err != nil {
+		if err := HashByteSlice(layer, layer); err != nil {
 			return err
 		}
 		layer = layer[:len(layer)/2]
 	}
-	copy(out, layer[0][:])
 	return
 }
 
@@ -72,28 +89,31 @@ func (m *merkleHasher) getBufferFromFlat(xs []byte) [][32]byte {
 }
 
 func (m *merkleHasher) transactionsListRoot(transactions [][]byte) ([32]byte, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	txCount := uint64(len(transactions))
-
-	leaves := m.getBuffer(len(transactions))
+	leaves, cancelfn := sharedbuffer.Make(len(transactions) * length.Hash)
+	defer cancelfn()
 	for i, transaction := range transactions {
 		transactionLength := uint64(len(transaction))
-		packedTransactions := packBits(transaction) // Pack transactions
-		transactionsBaseRoot, err := MerkleizeVector(packedTransactions, 33554432)
+
+		formattedTransaction, cancelfn2 := sharedbuffer.Make(len(transaction) + (length.Hash - (len(transaction) % length.Hash)))
+		copy(formattedTransaction, transaction)
+		var out [32]byte
+		err := m.merkleizeTrieLeavesFlat(formattedTransaction, out[:], 33554432)
 		if err != nil {
+			cancelfn2()
 			return [32]byte{}, err
 		}
 
 		lengthRoot := Uint64Root(transactionLength)
-		leaves[i] = utils.Keccak256(transactionsBaseRoot[:], lengthRoot[:])
+		out = utils.Keccak256(out[:], lengthRoot[:])
+		copy(leaves[i*length.Hash:], out[:])
+		cancelfn2()
 	}
-	transactionsBaseRoot, err := MerkleizeVector(leaves, 1048576)
+	err := MerkleRootFromFlatLeavesWithLimit(leaves, leaves, 1048576)
 	if err != nil {
 		return libcommon.Hash{}, err
 	}
 
-	countRoot := Uint64Root(txCount)
+	countRoot := Uint64Root(uint64(len(transactions)))
 
-	return utils.Keccak256(transactionsBaseRoot[:], countRoot[:]), nil
+	return utils.Keccak256(leaves[:length.Hash], countRoot[:]), nil
 }

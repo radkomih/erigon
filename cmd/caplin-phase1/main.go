@@ -18,6 +18,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Giulio2002/sharedbuffer"
+	"github.com/Giulio2002/sharedbuffer/fsm"
+	"github.com/Giulio2002/sharedbuffer/management"
 	"github.com/ledgerwatch/erigon/cl/beacon"
 	"github.com/ledgerwatch/erigon/cl/beacon/handler"
 	"github.com/ledgerwatch/erigon/cl/freezer"
@@ -53,6 +56,7 @@ func main() {
 }
 
 func runCaplinNode(cliCtx *cli.Context) error {
+	sharedbuffer.SetGlobalBuffer(sharedbuffer.NewConcurrentSharedBuffer(fsm.NewCountingFreeSpaceManager(), management.NewMemoryBuffer()))
 	ctx := context.Background()
 	cfg, err := lcCli.SetupConsensusClientCfg(cliCtx)
 	if err != nil {

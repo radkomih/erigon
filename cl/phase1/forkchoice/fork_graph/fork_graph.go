@@ -117,7 +117,6 @@ func (f *ForkGraph) AddChainSegment(signedBlock *cltypes.SignedBeaconBlock, full
 	if err != nil {
 		return nil, LogisticError, err
 	}
-
 	if _, ok := f.headers[blockRoot]; ok {
 		return nil, PreValidated, nil
 	}
