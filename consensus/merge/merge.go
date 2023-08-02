@@ -8,6 +8,8 @@ import (
 
 	"github.com/holiman/uint256"
 
+	"github.com/ledgerwatch/log/v3"
+
 	"github.com/ledgerwatch/erigon-lib/chain"
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon/consensus"
@@ -17,7 +19,6 @@ import (
 	"github.com/ledgerwatch/erigon/core/types"
 	"github.com/ledgerwatch/erigon/params"
 	"github.com/ledgerwatch/erigon/rpc"
-	"github.com/ledgerwatch/log/v3"
 )
 
 // Constants for The Merge as specified by EIP-3675: Upgrade consensus to Proof-of-Stake
@@ -131,8 +132,8 @@ func (s *Merge) CalculateRewards(config *chain.Config, header *types.Header, unc
 }
 
 func (s *Merge) Finalize(config *chain.Config, header *types.Header, state *state.IntraBlockState,
-	txs types.Transactions, uncles []*types.Header, r types.Receipts, withdrawals []*types.Withdrawal,
-	chain consensus.ChainHeaderReader, syscall consensus.SystemCall, logger log.Logger,
+	 txs types.Transactions, uncles []*types.Header, r types.Receipts, withdrawals []*types.Withdrawal,
+	 chain consensus.ChainHeaderReader, syscall consensus.SystemCall, logger log.Logger,
 ) (types.Transactions, types.Receipts, error) {
 	if !misc.IsPoSHeader(header) {
 		return s.eth1Engine.Finalize(config, header, state, txs, uncles, r, withdrawals, chain, syscall, logger)
@@ -163,8 +164,8 @@ func (s *Merge) Finalize(config *chain.Config, header *types.Header, state *stat
 }
 
 func (s *Merge) FinalizeAndAssemble(config *chain.Config, header *types.Header, state *state.IntraBlockState,
-	txs types.Transactions, uncles []*types.Header, receipts types.Receipts, withdrawals []*types.Withdrawal,
-	chain consensus.ChainHeaderReader, syscall consensus.SystemCall, call consensus.Call, logger log.Logger,
+	 txs types.Transactions, uncles []*types.Header, receipts types.Receipts, withdrawals []*types.Withdrawal,
+	 chain consensus.ChainHeaderReader, syscall consensus.SystemCall, call consensus.Call, logger log.Logger,
 ) (*types.Block, types.Transactions, types.Receipts, error) {
 	if !misc.IsPoSHeader(header) {
 		return s.eth1Engine.FinalizeAndAssemble(config, header, state, txs, uncles, receipts, withdrawals, chain, syscall, call, logger)
@@ -242,18 +243,12 @@ func (s *Merge) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		return consensus.ErrUnexpectedWithdrawals
 	}
 
-	if !chain.Config().IsCancun(header.Time) {
-		if header.BlobGasUsed != nil {
-			return fmt.Errorf("invalid blobGasUsed before fork: have %v, expected 'nil'", header.BlobGasUsed)
-		}
-		if header.ExcessBlobGas != nil {
-			return fmt.Errorf("invalid excessBlobGas before fork: have %v, expected 'nil'", header.ExcessBlobGas)
-		}
-	} else if err := misc.VerifyEip4844Header(chain.Config(), parent, header); err != nil {
-		// Verify the header's EIP-4844 attributes.
-		return err
+	cancun := chain.Config().IsCancun(header.Time)
+	if cancun {
+		return misc.VerifyPresenceOfCancunHeaderFields(header)
+	} else {
+		return misc.VerifyAbsenceOfCancunHeaderFields(header)
 	}
-	return nil
 }
 
 func (s *Merge) Seal(chain consensus.ChainHeaderReader, block *types.Block, results chan<- *types.Block, stop <-chan struct{}) error {

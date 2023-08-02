@@ -12,6 +12,8 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	libstate "github.com/ledgerwatch/erigon-lib/state"
 
+	"github.com/ledgerwatch/log/v3"
+
 	"github.com/ledgerwatch/erigon-lib/chain"
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/hexutility"
@@ -19,7 +21,6 @@ import (
 	"github.com/ledgerwatch/erigon-lib/gointerfaces/txpool"
 	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/erigon-lib/kv/kvcache"
-	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon/cl/clparams"
 	"github.com/ledgerwatch/erigon/cmd/rpcdaemon/cli"
@@ -164,6 +165,7 @@ func (s *EngineServer) newPayload(ctx context.Context, req *engine_types.Executi
 	if version >= clparams.DenebVersion {
 		header.BlobGasUsed = (*uint64)(req.BlobGasUsed)
 		header.ExcessBlobGas = (*uint64)(req.ExcessBlobGas)
+		header.ParentBeaconBlockRoot = parentBeaconBlockRoot
 	}
 
 	if !s.config.IsCancun(header.Time) && (header.BlobGasUsed != nil || header.ExcessBlobGas != nil) {
@@ -172,6 +174,10 @@ func (s *EngineServer) newPayload(ctx context.Context, req *engine_types.Executi
 
 	if s.config.IsCancun(header.Time) && (header.BlobGasUsed == nil || header.ExcessBlobGas == nil) {
 		return nil, &rpc.InvalidParamsError{Message: "blobGasUsed/excessBlobGas missing"}
+	}
+
+	if s.config.IsCancun(header.Time) && header.ParentBeaconBlockRoot == nil {
+		return nil, &rpc.InvalidParamsError{Message: "parentBeaconBlockRoot missing"}
 	}
 
 	blockHash := req.BlockHash

@@ -29,6 +29,7 @@ import (
 	"sync/atomic"
 
 	"github.com/gballet/go-verkle"
+
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/common/hexutility"
 	rlp2 "github.com/ledgerwatch/erigon-lib/rlp"
@@ -100,6 +101,8 @@ type Header struct {
 	// BlobGasUsed & ExcessBlobGas were added by EIP-4844 and are ignored in legacy headers.
 	BlobGasUsed   *uint64 `json:"blobGasUsed"`
 	ExcessBlobGas *uint64 `json:"excessBlobGas"`
+
+	ParentBeaconBlockRoot *libcommon.Hash `json:"parentBeaconBlockRoot"` // EIP-4788
 
 	// The verkle proof is ignored in legacy headers
 	Verkle        bool
